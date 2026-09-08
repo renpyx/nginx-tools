@@ -80,3 +80,7 @@ Config paths are fixed to the standard Debian/nginx layout:
 
 Early alpha - built for managing my own nginx setup, not hardened or tested
 for production fleets.
+
+## License
+
+MIT - see [LICENSE](LICENSE).
