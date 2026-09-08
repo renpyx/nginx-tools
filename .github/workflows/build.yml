@@ -1,0 +1,77 @@
+name: Build .deb package
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build_deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils python3 python3-pip python3-argcomplete
+
+      - name: Build .deb package
+        run: |
+          BASE_VERSION="0.0.1-Alpha-dev"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            PKG_VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            PKG_VERSION="${BASE_VERSION}-${GITHUB_RUN_NUMBER}"
+          fi
+          PKG_NAME="nxtool"
+          BUILD_DIR="build_package"
+          DEB_FILE="${PKG_NAME}_${PKG_VERSION}_all.deb"
+
+          mkdir -p $BUILD_DIR/DEBIAN
+          mkdir -p $BUILD_DIR/usr/bin
+          mkdir -p $BUILD_DIR/usr/lib/nxtool
+          mkdir -p $BUILD_DIR/etc/bash_completion.d
+
+          cat <<EOF > $BUILD_DIR/DEBIAN/control
+          Package: $PKG_NAME
+          Version: $PKG_VERSION
+          Section: utils
+          Priority: optional
+          Architecture: all
+          Maintainer: $GITHUB_ACTOR
+          Depends: python3, python3-argcomplete, nginx
+          Description: Nginx Site Management Wrapper (Dev-Build)
+          EOF
+
+          cp -r src/* $BUILD_DIR/usr/lib/nxtool/
+
+          cat <<EOF > $BUILD_DIR/usr/bin/nxtool
+          #!/bin/bash
+          export PYTHONPATH=\$PYTHONPATH:/usr/lib/nxtool
+          python3 /usr/lib/nxtool/app.py "\$@"
+          EOF
+          chmod 755 $BUILD_DIR/usr/bin/nxtool
+
+          register-python-argcomplete --no-defaults $BUILD_DIR/usr/lib/nxtool/app.py > $BUILD_DIR/etc/bash_completion.d/nxtool
+          sed -i "s|$BUILD_DIR/usr/lib/nxtool/app.py|nxtool|g" $BUILD_DIR/etc/bash_completion.d/nxtool
+
+          chmod -R 755 $BUILD_DIR/DEBIAN
+          dpkg-deb --build $BUILD_DIR $DEB_FILE
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nxtool-deb
+          path: "*.deb"
+          retention-days: 7
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.deb"

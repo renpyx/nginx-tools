@@ -1,0 +1,58 @@
+image: ubuntu:latest
+
+stages:
+  - build
+
+build_deb:
+  stage: build
+  tags:
+    - main-runner
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+  before_script:
+    - apt-get update
+    - apt-get install -y binutils python3 python3-pip python3-argcomplete
+  script:
+    - BASE_VERSION="0.0.1-Alpha-dev"
+    - PKG_VERSION="${BASE_VERSION}-${CI_PIPELINE_IID}"
+    - PKG_NAME="nxtool"
+    - BUILD_DIR="build_package"
+    - DEB_FILE="${PKG_NAME}_${PKG_VERSION}_all.deb"
+
+    - mkdir -p $BUILD_DIR/DEBIAN
+    - mkdir -p $BUILD_DIR/usr/bin
+    - mkdir -p $BUILD_DIR/usr/lib/nxtool
+    - mkdir -p $BUILD_DIR/etc/bash_completion.d
+
+    - |
+      cat <<EOF > $BUILD_DIR/DEBIAN/control
+      Package: $PKG_NAME
+      Version: $PKG_VERSION
+      Section: utils
+      Priority: optional
+      Architecture: all
+      Maintainer: $GITLAB_USER_NAME <$GITLAB_USER_EMAIL>
+      Depends: python3, python3-argcomplete, nginx
+      Description: Nginx Site Management Wrapper (Dev-Build)
+      EOF
+
+    - cp -r src/* $BUILD_DIR/usr/lib/nxtool/
+
+    - |
+      cat <<EOF > $BUILD_DIR/usr/bin/nxtool
+      #!/bin/bash
+      export PYTHONPATH=\$PYTHONPATH:/usr/lib/nxtool
+      python3 /usr/lib/nxtool/app.py "\$@"
+      EOF
+    - chmod 755 $BUILD_DIR/usr/bin/nxtool
+
+    - register-python-argcomplete --no-defaults $BUILD_DIR/usr/lib/nxtool/app.py > $BUILD_DIR/etc/bash_completion.d/nxtool
+    - sed -i "s|$BUILD_DIR/usr/lib/nxtool/app.py|nxtool|g" $BUILD_DIR/etc/bash_completion.d/nxtool
+
+    - chmod -R 755 $BUILD_DIR/DEBIAN
+    - dpkg-deb --build $BUILD_DIR $DEB_FILE
+
+  artifacts:
+    paths:
+      - "*.deb"
+    expire_in: 1 week
